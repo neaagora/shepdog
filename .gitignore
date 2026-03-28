@@ -31,6 +31,7 @@ service-records/*.json
 
 # Report output
 report.json
+report*.json
 
 # OS
 .DS_Store

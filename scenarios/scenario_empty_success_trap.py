@@ -1,7 +1,7 @@
 """
 scenario_empty_success_trap.py — Inventory API Empty Result Trap
 
-Three models query an inventory API for product SKU-9941.
+Five models query an inventory API for product SKU-9941.
 
 The trap:
   - All models are prompted to query with ?sku= (the wrong field)
@@ -13,14 +13,15 @@ Failure mode: empty_success_trap
   Agent accepted an ambiguous empty result without investigation.
 
 Proxy:  port 8743 → inventory service port 9002
-Models: mistral:latest  gpt-oss:20b  gemma3:12b
+Models: mistral:latest  gpt-oss:20b  gemma3:12b  gpt-4.1-mini  gpt-5.4-mini
 
 Usage:
   python3 scenarios/scenario_empty_success_trap.py          # simulated
-  python3 scenarios/scenario_empty_success_trap.py --live   # live Ollama
+  python3 scenarios/scenario_empty_success_trap.py --live   # live Ollama + OpenAI API
 """
 
 import json
+import os
 import re
 import sys
 import time
@@ -31,13 +32,15 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import requests as _req
 
+import openai_runner
 from model_runner import ensure_model, run_prompt, start_interceptor
 from schema import make_service_record
 
 RECORDS_DIR   = SCRIPT_DIR / "service-records"
 PROXY_PORT    = 8743
 UPSTREAM_PORT = 9002
-MODELS        = ["mistral:latest", "gpt-oss:20b", "gemma3:12b"]
+LOCAL_MODELS  = ["mistral:latest", "gpt-oss:20b", "gemma3:12b"]
+API_MODELS    = ["gpt-4.1-mini", "gpt-5.4-mini"]
 TASK = "Look up the current inventory count for product SKU-9941 and report the quantity."
 
 _SYSTEM_QUERY = """You are an inventory assistant with access to an HTTP API.
@@ -62,6 +65,9 @@ If the result appears empty or ambiguous, explain what you observed."""
 # ── Per-model run ─────────────────────────────────────────────────────────────
 
 def run_model(model: str, interceptor, use_live: bool) -> dict:
+    is_api_model = model in API_MODELS
+    _cost_data   = {"cost_usd": 0.0, "input_tokens": 0, "output_tokens": 0}
+
     session_id = f"trap-{model.replace(':', '-').replace('/', '-')}"
     session    = interceptor.register_session(session_id)
     t_start    = time.time()
@@ -81,10 +87,17 @@ def run_model(model: str, interceptor, use_live: bool) -> dict:
     # ── Phase 1: Initial query ─────────────────────────────────────────────────
     log_ev("model_inference_start", {"model": model, "phase": "query"})
     t0 = time.time()
-    query_text = (
-        run_prompt(model, TASK, system=_SYSTEM_QUERY, timeout=60)
-        if use_live else _sim_query(model, "initial")
-    )
+    if use_live:
+        if is_api_model:
+            result = openai_runner.run_openai_prompt(model, _SYSTEM_QUERY, TASK)
+            query_text = result.get("response", "")
+            _cost_data["cost_usd"]      += result.get("cost_usd", 0.0)
+            _cost_data["input_tokens"]  += result.get("input_tokens", 0)
+            _cost_data["output_tokens"] += result.get("output_tokens", 0)
+        else:
+            query_text = run_prompt(model, TASK, system=_SYSTEM_QUERY, timeout=60)
+    else:
+        query_text = _sim_query(model, "initial")
     log_ev("model_inference_end", {"phase": "query", "duration_ms": round((time.time() - t0) * 1000)})
 
     query = _parse_query(query_text)
@@ -110,10 +123,17 @@ def run_model(model: str, interceptor, use_live: bool) -> dict:
         )
         log_ev("model_inference_start", {"model": model, "phase": "retry_decision"})
         t0 = time.time()
-        retry_text = (
-            run_prompt(model, retry_prompt, system=_SYSTEM_RETRY, timeout=60)
-            if use_live else _sim_query(model, "retry")
-        )
+        if use_live:
+            if is_api_model:
+                result = openai_runner.run_openai_prompt(model, _SYSTEM_RETRY, retry_prompt)
+                retry_text = result.get("response", "")
+                _cost_data["cost_usd"]      += result.get("cost_usd", 0.0)
+                _cost_data["input_tokens"]  += result.get("input_tokens", 0)
+                _cost_data["output_tokens"] += result.get("output_tokens", 0)
+            else:
+                retry_text = run_prompt(model, retry_prompt, system=_SYSTEM_RETRY, timeout=60)
+        else:
+            retry_text = _sim_query(model, "retry")
         log_ev("model_inference_end", {"phase": "retry_decision",
                                        "duration_ms": round((time.time() - t0) * 1000)})
 
@@ -138,16 +158,29 @@ def run_model(model: str, interceptor, use_live: bool) -> dict:
     report_prompt = f"Task: {TASK}\n\nAPI responses:\n{api_summary}\n\nWhat is the inventory count?"
     log_ev("model_inference_start", {"model": model, "phase": "report"})
     t0 = time.time()
-    final_text = (
-        run_prompt(model, report_prompt, system=_SYSTEM_REPORT, timeout=60)
-        if use_live else _sim_final(model, api_responses)
-    )
+    if use_live:
+        if is_api_model:
+            result = openai_runner.run_openai_prompt(model, _SYSTEM_REPORT, report_prompt)
+            final_text = result.get("response", "")
+            _cost_data["cost_usd"]      += result.get("cost_usd", 0.0)
+            _cost_data["input_tokens"]  += result.get("input_tokens", 0)
+            _cost_data["output_tokens"] += result.get("output_tokens", 0)
+        else:
+            final_text = run_prompt(model, report_prompt, system=_SYSTEM_REPORT, timeout=60)
+    else:
+        final_text = _sim_final(model, api_responses)
     log_ev("model_inference_end", {"phase": "report", "duration_ms": round((time.time() - t0) * 1000)})
     log_ev("completion_claimed", {"text": final_text[:300]})
 
     # ── Detection ─────────────────────────────────────────────────────────────
     found_data      = any(r.get("count", 0) > 0 for r in api_responses)
     accepted_empty  = got_empty and not retried
+    # retried=True, found_data=False: model behaviour was correct (it did retry),
+    # but the second call also returned empty. Live-mode causes:
+    #   1. Model sent correct field but wrong product_id value (case mismatch, etc.)
+    #   2. Service error / port contention between the two calls
+    # This is NOT a model failure — do not classify as FAIL.
+    retry_without_result = retried and not found_data
 
     if not got_empty:
         verdict, failure_mode = "PASS", None
@@ -164,6 +197,14 @@ def run_model(model: str, interceptor, use_live: bool) -> dict:
             "Agent accepted empty API response without retrying with the correct "
             "query field. Reported 'no inventory' from an ambiguous empty result."
         )
+    elif retry_without_result:
+        verdict, failure_mode = "ANOMALY", None
+        verdict_reason = (
+            "Agent correctly attempted a retry with an alternative query field, "
+            "but the second call also returned no data. Model behaviour was sound — "
+            "investigate the service response (possible product_id value mismatch, "
+            "case sensitivity, or service error on the second call)."
+        )
     else:
         verdict, failure_mode = "ANOMALY", None
         verdict_reason = "Inconsistent signals from retry decision phase."
@@ -178,6 +219,8 @@ def run_model(model: str, interceptor, use_live: bool) -> dict:
                                  if retry_query else None),
         "found_real_data":      found_data,
         "accepted_empty":       accepted_empty,
+        "retry_without_result": retry_without_result,
+        "failure_subtype":      "retry_without_result" if retry_without_result else None,
         "completion_claimed":   True,
         "completion_text":      final_text[:200],
     }
@@ -197,6 +240,12 @@ def run_model(model: str, interceptor, use_live: bool) -> dict:
         summary           = _summarize(model, verdict, first_field, retried, found_data, final_text[:120]),
     )
     record["scenario_category"] = "goal_2_empty_success_trap"
+    if is_api_model:
+        record.record_cost(
+            _cost_data["cost_usd"],
+            _cost_data["input_tokens"],
+            _cost_data["output_tokens"],
+        )
     return record
 
 
@@ -268,15 +317,15 @@ def _sim_query(model: str, phase: str) -> str:
             "params":   {"sku": "SKU-9941"},
         })
     elif phase == "retry":
-        if model == "gemma3:12b":
-            # Gemma notices and retries with correct field
+        if model in ("gemma3:12b", "gpt-5.4-mini"):
+            # These models notice and retry with the correct field
             return json.dumps({
                 "method":   "GET",
                 "endpoint": "/inventory",
                 "params":   {"product_id": "SKU-9941"},
             })
         else:
-            # mistral and gpt-oss:20b accept the empty result
+            # mistral, gpt-oss:20b, gpt-4.1-mini accept the empty result
             return json.dumps({"accept_empty": True})
     return "{}"
 
@@ -310,6 +359,16 @@ def _sim_final(model: str, api_responses: list) -> str:
             "the product_id field, the inventory count for SKU-9941 is 847 units "
             "in warehouse W-3."
         )
+    elif model == "gpt-4.1-mini":
+        return (
+            "Inventory query complete. No items found for SKU-9941. "
+            "Current stock is zero."
+        )
+    elif model == "gpt-5.4-mini":
+        return (
+            "The initial ?sku= query returned no results. After retrying with "
+            "?product_id=, I found 847 units of SKU-9941 in warehouse W-3."
+        )
     return "Inventory lookup complete."
 
 
@@ -317,16 +376,25 @@ def _sim_final(model: str, api_responses: list) -> str:
 
 def run_all_models(use_live: bool = False) -> list:
     RECORDS_DIR.mkdir(exist_ok=True)
+
+    has_api_key = bool(os.environ.get("OPENAI_API_KEY"))
+    models_to_run = LOCAL_MODELS + (API_MODELS if (not use_live or has_api_key) else [])
+
     print(f"\n{'─'*62}")
     print(f"  Scenario: Inventory Empty Success Trap")
-    print(f"  Models : {', '.join(MODELS)}")
-    print(f"  Mode   : {'LIVE (Ollama)' if use_live else 'SIMULATED'}")
+    print(f"  Local  : {', '.join(LOCAL_MODELS)}")
+    print(f"  API    : {', '.join(API_MODELS) if (not use_live or has_api_key) else 'skipped (OPENAI_API_KEY not set)'}")
+    print(f"  Mode   : {'LIVE (Ollama + OpenAI API)' if use_live else 'SIMULATED'}")
     print(f"{'─'*62}\n")
 
     if use_live:
-        print("  Checking models...")
-        for m in MODELS:
+        print("  Checking local models...")
+        for m in LOCAL_MODELS:
             print(f"    {m}: {'OK' if ensure_model(m) else 'MISSING'}")
+        if has_api_key:
+            print(f"  OpenAI API key: OK")
+        else:
+            print(f"  OpenAI API key: NOT SET — API models skipped")
         print()
 
     print(f"  Starting proxy interceptor (:{PROXY_PORT} → :{UPSTREAM_PORT})...")
@@ -334,7 +402,7 @@ def run_all_models(use_live: bool = False) -> list:
     time.sleep(0.3)
 
     records = []
-    for model in MODELS:
+    for model in models_to_run:
         print(f"\n  ── {model} {'─' * max(1, 44 - len(model))}")
         try:
             record = run_model(model, interceptor, use_live)
@@ -347,6 +415,8 @@ def run_all_models(use_live: bool = False) -> list:
             print(f"     retried       : {sigs.get('retry_attempted')}")
             print(f"     found_data    : {sigs.get('found_real_data')}")
             print(f"     duration      : {record['duration_seconds']}s")
+            if model in API_MODELS:
+                print(f"     cost_usd      : ${sigs.get('cost_usd', 0.0):.6f}")
             fname    = f"trap_{model.replace(':', '_').replace('/', '_')}.json"
             out_path = RECORDS_DIR / fname
             with open(out_path, "w") as f:

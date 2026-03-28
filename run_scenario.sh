@@ -60,6 +60,12 @@ if [[ -n "$LIVE" ]]; then
         exit 1
     fi
     echo "[run] Ollama OK"
+
+    if [ -z "$OPENAI_API_KEY" ]; then
+        echo "[run] Warning: OPENAI_API_KEY not set — API models will be skipped"
+    else
+        echo "[run] OpenAI API key: OK"
+    fi
     echo ""
 fi
 

@@ -44,6 +44,41 @@ def new_record_id() -> str:
     return f"SR-{uuid.uuid4().hex[:8]}"
 
 
+class ServiceRecord(dict):
+    """
+    Dict subclass for shepdog/service-record/v1 records.
+    All existing dict operations (json.dump, record["key"], etc.) work unchanged.
+    Adds record_cost() for updating API model cost data after a run.
+    """
+
+    def record_cost(
+        self,
+        cost_usd: float,
+        input_tokens: int,
+        output_tokens: int,
+        model_type: str = "api",
+    ) -> None:
+        """Append a cost_recorded event and update behavioral_signals cost fields."""
+        sigs = self.setdefault("behavioral_signals", {})
+        sigs["cost_usd"]      = round(cost_usd, 8)
+        sigs["input_tokens"]  = input_tokens
+        sigs["output_tokens"] = output_tokens
+        sigs["model_type"]    = model_type
+
+        event_log = self.setdefault("event_log", [])
+        event_log.append({
+            "seq":        len(event_log) + 1,
+            "ts":         time.time(),
+            "event_type": "cost_recorded",
+            "detail": {
+                "cost_usd":      round(cost_usd, 8),
+                "input_tokens":  input_tokens,
+                "output_tokens": output_tokens,
+                "model_type":    model_type,
+            },
+        })
+
+
 def make_service_record(
     model: str,
     scenario: str,
@@ -58,15 +93,22 @@ def make_service_record(
     duration_seconds: float = 0.0,
     raw_response: str = "",
     summary: str = "",
-) -> dict:
-    """Return a fully formed shepdog/service-record/v1 dict."""
+) -> ServiceRecord:
+    """Return a fully formed shepdog/service-record/v1 ServiceRecord."""
     now = time.time()
     if verdict not in VERDICTS:
         raise ValueError(f"verdict must be one of {VERDICTS}, got {verdict!r}")
     if failure_mode and failure_mode not in FAILURE_MODES:
         raise ValueError(f"failure_mode must be one of {list(FAILURE_MODES)}, got {failure_mode!r}")
 
-    return {
+    # Initialise cost fields with local-model defaults; record_cost() overwrites for API models
+    sigs = dict(behavioral_signals or {})
+    sigs.setdefault("cost_usd", 0.0)
+    sigs.setdefault("input_tokens", 0)
+    sigs.setdefault("output_tokens", 0)
+    sigs.setdefault("model_type", "local")
+
+    return ServiceRecord({
         "record_id":            new_record_id(),
         "record_version":       "1.0",
         "schema":               SCHEMA_VERSION,
@@ -81,15 +123,15 @@ def make_service_record(
         "session_start_ts":     now - duration_seconds,
         "session_end_ts":       now,
         "duration_seconds":     round(duration_seconds, 2),
-        "behavioral_signals":   behavioral_signals or {},
+        "behavioral_signals":   sigs,
         "failure_mode":         failure_mode,
         "verdict":              verdict,
         "verdict_reason":       verdict_reason,
         "summary":              summary,
-        "event_log":            event_log or [],
+        "event_log":            list(event_log or []),
         "raw_response":         raw_response,
         "signal_tags":          _build_tags(model, scenario, verdict, failure_mode),
-    }
+    })
 
 
 def _build_tags(model: str, scenario: str, verdict: str, failure_mode: str) -> list:

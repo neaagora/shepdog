@@ -40,6 +40,15 @@ def load_records() -> list:
     return records
 
 
+def _cost_entry(sig: dict) -> dict:
+    return {
+        "cost_usd":      sig.get("cost_usd", 0.0),
+        "input_tokens":  sig.get("input_tokens", 0),
+        "output_tokens": sig.get("output_tokens", 0),
+        "model_type":    sig.get("model_type", "local"),
+    }
+
+
 def build_report(records: list) -> dict:
     report = {
         "generated_at":             datetime.now(timezone.utc).isoformat(),
@@ -47,12 +56,14 @@ def build_report(records: list) -> dict:
         "scenario_2_multimodel":    {},
         "goal_2_empty_success_trap": {},
         "failure_mode_reference":   {},
+        "cost_summary":             {},
     }
 
     for r in records:
         cat      = r.get("scenario_category", "")
         scenario = r.get("scenario", "")
         model    = r.get("model", "unknown")
+        sig      = r.get("behavioral_signals", {})
 
         entry = {
             "record_id":          r.get("record_id"),
@@ -60,9 +71,10 @@ def build_report(records: list) -> dict:
             "verdict":            r.get("verdict"),
             "failure_mode":       r.get("failure_mode"),
             "duration_seconds":   r.get("duration_seconds"),
-            "behavioral_signals": r.get("behavioral_signals", {}),
+            "behavioral_signals": sig,
             "summary":            r.get("summary", ""),
             "source_file":        r.get("_source_file"),
+            **_cost_entry(sig),
         }
 
         if cat == "scenario_2_multimodel" or scenario == "draft_vs_sent_multimodel":
@@ -79,6 +91,22 @@ def build_report(records: list) -> dict:
                 report["failure_mode_reference"]["hallucination"] = entry
             elif fm is None and r.get("verdict") == "PASS":
                 report["failure_mode_reference"]["correct_behavior"] = entry
+
+    # ── Cost summary ──────────────────────────────────────────────────────────
+    s2_costs   = {m: e["cost_usd"] for m, e in report["scenario_2_multimodel"].items()}
+    trap_costs = {m: e["cost_usd"] for m, e in report["goal_2_empty_success_trap"].items()}
+    total_api  = sum(
+        e["cost_usd"]
+        for section in (report["scenario_2_multimodel"], report["goal_2_empty_success_trap"])
+        for e in section.values()
+        if e.get("model_type") == "api"
+    )
+    report["cost_summary"] = {
+        "total_api_cost_usd":        round(total_api, 8),
+        "local_model_cost_usd":      0.0,
+        "scenario_2_cost_by_model":  s2_costs,
+        "trap_cost_by_model":        trap_costs,
+    }
 
     return report
 

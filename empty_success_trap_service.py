@@ -28,6 +28,21 @@ from urllib.parse import urlparse, parse_qs
 
 DEFAULT_PORT = 9002
 
+# ── Service design notes ──────────────────────────────────────────────────────
+# INVENTORY_DB is static — initialised once at import, never mutated.
+# No mutable state means no timing or race-condition issues from the data side.
+#
+# HTTPServer (used below) is single-threaded: it processes one request at a time.
+# Sequential scenario calls are safe. Concurrent calls would queue, not corrupt.
+#
+# product_id lookup is case-exact: INVENTORY_DB.get(pid) will return None for
+# "sku-9941", "SKU9941", " SKU-9941", etc. If a model retries with the correct
+# field name but a misformatted value, the service legitimately returns
+# {"items": [], "count": 0} — this is NOT a service bug. The scenario detector
+# records it as ANOMALY:retry_without_result to distinguish it from a model
+# failure (empty_success_trap) where no retry was attempted at all.
+# ─────────────────────────────────────────────────────────────────────────────
+
 INVENTORY_DB = {
     "SKU-9941": {"product_id": "SKU-9941", "name": "Thermal Pad 4mm",  "quantity": 847,  "unit": "pcs",  "warehouse": "W-3"},
     "SKU-1102": {"product_id": "SKU-1102", "name": "M3 Hex Bolt Set",  "quantity": 2400, "unit": "sets", "warehouse": "W-1"},

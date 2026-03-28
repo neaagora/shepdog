@@ -341,6 +341,45 @@ h2 span {
 }
 .trap-table tr:last-child td { border-bottom: none; }
 .trap-table tr:hover td { background: rgba(255,255,255,0.015); }
+
+/* ── Cost vs Reliability table ───────────────────────────────────────────── */
+.cost-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; }
+.cost-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cost-table th {
+  padding: 10px 14px;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+  background: var(--surface);
+}
+.cost-table th.cost-col { color: var(--anomaly); }
+.cost-table td { padding: 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.cost-table tr:last-child td { border-bottom: none; }
+.cost-table tr:hover td { background: rgba(255,255,255,0.015); }
+.cost-val {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--anomaly);
+  letter-spacing: 0.02em;
+}
+.cost-val.free { color: var(--pass); }
+.type-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.type-badge.local { background: rgba(0,232,122,0.08); color: var(--pass); border: 1px solid rgba(0,232,122,0.2); }
+.type-badge.api   { background: rgba(255,170,34,0.08); color: var(--anomaly); border: 1px solid rgba(255,170,34,0.2); }
+.size-note { font-size: 11px; color: var(--muted); margin-top: 3px; }
 .query-code {
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -440,6 +479,30 @@ h2 span {
         </tr>
       </thead>
       <tbody id="model-tbody"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── Cost vs. Reliability ────────────────────────────────────────────────── -->
+<section id="cost-reliability">
+  <h2><span>Cost vs. Reliability</span></h2>
+  <p style="color:var(--muted); font-size:12px; margin-bottom:28px; max-width:600px;">
+    Local models run free. API models cost real money per call.
+    Neither cost nor provenance guarantees correct behavior —
+    Shepdog tells you <em>which</em> failures to expect regardless of where the model runs.
+  </p>
+  <div class="cost-table-wrap">
+    <table class="cost-table" id="cost-table">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Type</th>
+          <th class="cost-col">Cost per run (USD)</th>
+          <th>Scenario 2 verdict</th>
+          <th>Trap verdict</th>
+        </tr>
+      </thead>
+      <tbody id="cost-tbody"></tbody>
     </table>
   </div>
 </section>
@@ -667,6 +730,17 @@ const TRAP_DATA = [
   },
 ];
 
+// ── Cost vs. Reliability data ──────────────────────────────────────────────
+// cost_usd: estimated total LLM calls per scenario run (2-3 calls × per-call cost)
+// Local models show $0.00 and model size; API models show estimated token cost.
+const COST_DATA = [
+  { model: "mistral:latest", type: "local", size_gb: "4.1 GB", cost_usd: 0.0,      s2_verdict: "FAIL", trap_verdict: "FAIL" },
+  { model: "gpt-oss:20b",   type: "local", size_gb: "12 GB",  cost_usd: 0.0,      s2_verdict: "FAIL", trap_verdict: "FAIL" },
+  { model: "gemma3:12b",    type: "local", size_gb: "8.0 GB", cost_usd: 0.0,      s2_verdict: "PASS", trap_verdict: "PASS" },
+  { model: "gpt-4.1-mini",  type: "api",   size_gb: null,     cost_usd: 0.000480, s2_verdict: "FAIL", trap_verdict: "FAIL" },
+  { model: "gpt-5.4-mini",  type: "api",   size_gb: null,     cost_usd: 0.001320, s2_verdict: "PASS", trap_verdict: "PASS" },
+];
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function badge(v) {
@@ -837,11 +911,36 @@ function renderTrap(data) {
   }).join('');
 }
 
+// ── Render Cost vs. Reliability ────────────────────────────────────────────
+
+function renderCostTable(data) {
+  const tbody = document.getElementById('cost-tbody');
+  tbody.innerHTML = data.map(row => {
+    const typeHtml = `<span class="type-badge ${row.type}">${row.type === 'api' ? 'API' : 'Local'}</span>`;
+    let costHtml;
+    if (row.type === 'local') {
+      costHtml = `<span class="cost-val free">$0.00</span><div class="size-note">${escHtml(row.size_gb)} on-device</div>`;
+    } else {
+      costHtml = `<span class="cost-val">$${row.cost_usd.toFixed(6)}</span><div class="size-note">est. ~2–3 LLM calls / run</div>`;
+    }
+    return `
+      <tr>
+        <td class="mono" style="white-space:nowrap">${escHtml(row.model)}</td>
+        <td>${typeHtml}</td>
+        <td>${costHtml}</td>
+        <td>${badge(row.s2_verdict)}</td>
+        <td>${badge(row.trap_verdict)}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
 // ── Init: try report.json, fall back to hardcoded ─────────────────────────
 
 async function init() {
   let mmData = MULTIMODEL_DATA;
   let trapData = TRAP_DATA;
+  let costData = COST_DATA;
 
   try {
     const resp = await fetch('./report.json');
@@ -876,6 +975,25 @@ async function init() {
           };
         });
       }
+
+      // Merge real cost data from report.json when available
+      if ((s2 || trapRpt) && Object.keys(s2 || {}).concat(Object.keys(trapRpt || {})).length > 0) {
+        costData = COST_DATA.map(row => {
+          const s2Entry   = s2?.[row.model];
+          const trapEntry = trapRpt?.[row.model];
+          const s2Cost    = s2Entry?.cost_usd   ?? null;
+          const trapCost  = trapEntry?.cost_usd ?? null;
+          const totalCost = (s2Cost !== null || trapCost !== null)
+            ? (s2Cost ?? 0) + (trapCost ?? 0)
+            : row.cost_usd;
+          return {
+            ...row,
+            cost_usd:    totalCost,
+            s2_verdict:  s2Entry?.verdict   ?? row.s2_verdict,
+            trap_verdict: trapEntry?.verdict ?? row.trap_verdict,
+          };
+        });
+      }
     }
   } catch (_) {
     // report.json not present — use hardcoded data
@@ -886,6 +1004,7 @@ async function init() {
   renderModelTable(mmData);
   renderTimeline(GEMMA3_EVENTS);
   renderTrap(trapData);
+  renderCostTable(costData);
 }
 
 init();
