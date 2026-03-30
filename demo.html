@@ -8,19 +8,19 @@
 /* ── Reset & Base ─────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg:        #0a0a12;
-  --surface:   #111120;
-  --surface2:  #161628;
-  --border:    #1e1e38;
-  --border2:   #2a2a48;
-  --text:      #d8d8f0;
-  --muted:     #7070a0;
-  --dim:       #4a4a70;
-  --pass:      #00e87a;
-  --fail:      #ff4455;
-  --anomaly:   #ffaa22;
-  --blue:      #4a9eff;
-  --purple:    #9988ff;
+  --bg:        #fdfaf8;
+  --surface:   #ffffff;
+  --surface2:  #eeeef2;
+  --border:    #d0d0da;
+  --border2:   #b8b8c8;
+  --text:      #1a1a2e;
+  --muted:     #5a5a78;
+  --dim:       #8888aa;
+  --pass:      #0a8f4e;
+  --fail:      #cc2233;
+  --anomaly:   #b06800;
+  --blue:      #1a6fc4;
+  --purple:    #5a44cc;
   --mono:      'Fira Code', 'Cascadia Code', 'Courier New', monospace;
   --sans:      'Inter', system-ui, -apple-system, sans-serif;
 }
@@ -84,7 +84,7 @@ h2 span {
   border-radius: 2px;
   opacity: 0.3;
 }
-.logo-text { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; color: #fff; }
+.logo-text { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; color: var(--text); }
 .logo-text em { color: var(--pass); font-style: normal; }
 .tagline {
   font-size: 15px;
@@ -141,7 +141,7 @@ h2 span {
   vertical-align: top;
 }
 .data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: rgba(255,255,255,0.015); }
+.data-table tr:hover td { background: rgba(0,0,0,0.03); }
 .mono { font-family: var(--mono); }
 .num  { text-align: right; font-variant-numeric: tabular-nums; }
 .delta-pos { color: var(--fail); }
@@ -176,7 +176,7 @@ h2 span {
   align-items: center;
   justify-content: space-between;
 }
-.fm-title { font-size: 13px; color: #fff; font-weight: 600; }
+.fm-title { font-size: 13px; color: var(--text); font-weight: 600; }
 .fm-body { padding: 20px; }
 .fm-row { display: flex; gap: 8px; margin-bottom: 12px; font-size: 12px; }
 .fm-row:last-child { margin-bottom: 0; }
@@ -212,7 +212,7 @@ h2 span {
   justify-content: space-between;
   gap: 8px;
 }
-.model-name { font-size: 13px; font-weight: 600; color: #fff; }
+.model-name { font-size: 13px; font-weight: 600; color: var(--text); }
 .model-body { padding: 16px; }
 .stat-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12px; }
 .stat-row:last-child { margin-bottom: 0; }
@@ -340,7 +340,7 @@ h2 span {
   line-height: 1.6;
 }
 .trap-table tr:last-child td { border-bottom: none; }
-.trap-table tr:hover td { background: rgba(255,255,255,0.015); }
+.trap-table tr:hover td { background: rgba(0,0,0,0.03); }
 
 /* ── Cost vs Reliability table ───────────────────────────────────────────── */
 .cost-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; }
@@ -359,7 +359,7 @@ h2 span {
 .cost-table th.cost-col { color: var(--anomaly); }
 .cost-table td { padding: 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .cost-table tr:last-child td { border-bottom: none; }
-.cost-table tr:hover td { background: rgba(255,255,255,0.015); }
+.cost-table tr:hover td { background: rgba(0,0,0,0.03); }
 .cost-val {
   font-family: var(--mono);
   font-size: 14px;
@@ -412,7 +412,7 @@ h2 span {
   font-size: 11px;
   color: var(--purple);
 }
-.arch-block strong { color: #fff; }
+.arch-block strong { color: var(--text); }
 
 /* ── Footer ──────────────────────────────────────────────────────────────── */
 #footer {
