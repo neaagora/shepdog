@@ -1,11 +1,11 @@
 .claude/
 docs/
-
+ 
 # API Keys — never commit these
 .env
 .env.*
 *.env
-
+ 
 # Python
 __pycache__/
 *.pyc
@@ -17,31 +17,28 @@ dist/
 build/
 .venv/
 venv/
-
-# Node / MCP server
+ 
+# Node (for future mcp-server build)
 node_modules/
 mcp-server/dist/
 mcp-server/node_modules/
-
-# Service records — real run outputs, not source code
-# Comment this out if you want to commit reference records
+ 
+# Service records — live run outputs excluded; ref_* files whitelisted
 service-records/*.json
 !service-records/ref_*.json
 !service-records/scenario1_*.json
-
-# Report output
-report.json
-report*.json
-
+service-records-run*/
+ 
+# Report outputs — main report.json committed; per-run backups excluded
+report_*.json
+ 
 # OS
 .DS_Store
 Thumbs.db
-
+desktop.ini
+ 
 # Editor
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# WSL / Windows artifacts
-desktop.ini
