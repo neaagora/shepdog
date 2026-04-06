@@ -30,6 +30,10 @@ This repository contains the experiment infrastructure, scenario runners,
 mock services, and results from running 5 models across 2 scenarios over
 3 independent runs.
 
+Includes:
+- Controlled failure scenarios (email, inventory)
+- Realistic workflow example (GitHub issue resolution)
+
 ---
 
 ## The Experiment
@@ -291,7 +295,8 @@ it succeeded — the proxy either saw the HTTP calls or it didn't.
 .
 ├── schema.py                          # shepdog/service-record/v1 schema
 ├── interceptor.py                     # HTTP proxy (ports 8742/8743)
-├── model_runner.py                    # Ollama interface + tool claim extraction
+├── model_runner.py                    # Ollama interface + tool claim 
+extraction
 ├── openai_runner.py                   # OpenAI API interface with cost tracking
 ├── email_service.py                   # Mock email service (port 9001)
 ├── empty_success_trap_service.py      # Mock inventory API (port 9002)
@@ -304,8 +309,22 @@ it succeeded — the proxy either saw the HTTP calls or it didn't.
 │   ├── scenario2_multimodel.py        # Email task — 5 models
 │   └── scenario_empty_success_trap.py # Inventory trap — 5 models
 └── specs/
-    ├── scenario3_data_egress_spec.py  # Pending: PII egress before redaction
-    └── scenario4_constraint_drift_spec.py  # Pending: guardrail compression
+│   ├── scenario3_data_egress_spec.py  # Pending: PII egress before redaction
+│   └── scenario4_constraint_drift_spec.py  # Pending: guardrail compression
+examples/
+├── github-issue
+│   ├── github_issue_error_trap_gemma4.py
+│   ├── github_issue_error_trap_gpt41mini.py
+│   ├── github_issue_error_trap_gpt54mini.py
+│   ├── github_issue_error_trap_mistral.py
+│   ├── github_issue_gemma3.py
+│   ├── github_issue_gemma3_shep_test.py
+│   ├── github_issue_gemma4.py
+│   ├── github_issue_gpt41mini.py
+│   ├── github_issue_gpt54mini.py
+│   ├── github_issue_gptoss.py
+│   ├── github_issue_mistral.py
+│   └── github_issue_qwen359b.py
 ```
 
 ---
@@ -391,6 +410,37 @@ never computed and never agent-reported. It reflects that the record
 was generated as a structural byproduct of the proxy being in the
 call path, not because the agent chose to report its behavior.
 
+---
+
+## Example — GitHub Issue Agent
+
+This repository includes a real-world style scenario under:
+
+`examples/github-issue/`
+
+This example demonstrates how Shepdog applies to real developer workflows,
+not just synthetic scenarios. It simulates an agent attempting to resolve a GitHub issue by:
+- reading issue context
+- proposing a fix
+- optionally interacting with external tools
+
+Shepdog observes the interaction and produces a service record showing:
+- what the agent claimed it did
+- what actually happened (HTTP/tool calls)
+- any divergence between the two
+
+See: `examples/github-issue/README.md` for setup and usage.
+
+*Note:* the `examples/github-issue/` showcase was added after the original 5-model PoC and includes additional models such as `gemma4:26b` and `qwen3.5:9b`. Its results should be read as a separate follow-on experiment, not as part of the original scenario matrix.
+
+---
+
+## Quick Start (GitHub Issue Example)
+
+```bash
+cd examples/github-issue
+./run_scenario.sh
+```
 ---
 
 ## What's Next
